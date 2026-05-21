@@ -1,0 +1,12 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="115" fill="#060c1e"/>
+  <!-- Single orbit arc only (no full ring — too noisy at small size) -->
+  <path d="M 256 48 A 210 210 0 0 1 420 132" fill="none" stroke="#5a7fd4" stroke-width="12" stroke-linecap="round" opacity=".6"/>
+  <!-- Crescent -->
+  <circle cx="256" cy="256" r="148" fill="#5a7fd4"/>
+  <circle cx="318" cy="218" r="126" fill="#060c1e"/>
+  <!-- Star only (no glow ring at small size) -->
+  <circle cx="256" cy="48" r="26" fill="#e8a030"/>
+  <!-- Centre dot -->
+  <circle cx="256" cy="256" r="14" fill="#e8a030" opacity=".9"/>
+</svg>

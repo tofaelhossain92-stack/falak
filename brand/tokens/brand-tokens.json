@@ -1,0 +1,49 @@
+{
+  "name": "Falak Brand Tokens",
+  "version": "1.0.0",
+  "color": {
+    "primary": { "value": "#5a7fd4", "description": "Falak Blue — main interactive colour" },
+    "primaryDark": { "value": "#3558b8", "description": "Deep Sky — pressed/dark variant" },
+    "accent": { "value": "#e8a030", "description": "Star Gold — Islamic/spiritual elements only" },
+    "prayer": { "value": "#2dd4bf", "description": "Dawn Teal — prayer tab, Tahajjud" },
+    "bgDark": { "value": "#060c1e", "description": "Night Sky — dark background" },
+    "bgLight": { "value": "#f0f5ff", "description": "Moonlight — light background" },
+    "textDark": { "value": "#f0f5ff", "description": "Primary text on dark" },
+    "textLight": { "value": "#1a2540", "description": "Primary text on light" },
+    "success": { "value": "#4ade80" },
+    "warning": { "value": "#f6c94e" },
+    "danger": { "value": "#f87171" }
+  },
+  "font": {
+    "display": { "value": "Cormorant Garamond", "weight": "300", "description": "Wordmark only" },
+    "body": { "value": "DM Sans", "weight": "400", "description": "All UI text" },
+    "medium": { "value": "DM Sans", "weight": "500", "description": "Labels and headings" }
+  },
+  "fontSize": {
+    "xs":      { "value": "10px" },
+    "sm":      { "value": "12px" },
+    "md":      { "value": "14px" },
+    "base":    { "value": "15px" },
+    "lg":      { "value": "17px" },
+    "xl":      { "value": "20px" },
+    "2xl":     { "value": "24px" },
+    "3xl":     { "value": "32px" },
+    "display": { "value": "56px" }
+  },
+  "borderRadius": {
+    "sm":  { "value": "6px" },
+    "md":  { "value": "10px" },
+    "lg":  { "value": "14px" },
+    "xl":  { "value": "18px" },
+    "2xl": { "value": "24px" }
+  },
+  "spacing": {
+    "1": { "value": "4px" },
+    "2": { "value": "8px" },
+    "3": { "value": "12px" },
+    "4": { "value": "16px" },
+    "5": { "value": "20px" },
+    "6": { "value": "24px" },
+    "8": { "value": "32px" }
+  }
+}

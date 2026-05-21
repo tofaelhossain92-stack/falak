@@ -1,0 +1,27 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="230" fill="#060c1e"/>
+  <!-- Outer orbit ring -->
+  <ellipse cx="512" cy="512" rx="420" ry="420" fill="none" stroke="#5a7fd4" stroke-width="6" opacity=".22"/>
+  <!-- Inner orbit ring -->
+  <ellipse cx="512" cy="512" rx="300" ry="300" fill="none" stroke="#5a7fd4" stroke-width="4" opacity=".12"/>
+  <!-- Orbit arc highlight (top right) -->
+  <path d="M 512 92 A 420 420 0 0 1 891 270" fill="none" stroke="#5a7fd4" stroke-width="14" stroke-linecap="round" opacity=".55"/>
+  <!-- Crescent body -->
+  <circle cx="512" cy="512" r="285" fill="#5a7fd4"/>
+  <circle cx="626" cy="430" r="243" fill="#060c1e"/>
+  <!-- Crescent rim highlight -->
+  <circle cx="512" cy="512" r="285" fill="none" stroke="#7a9fe4" stroke-width="6" opacity=".3"/>
+  <!-- Orbital star (top) -->
+  <circle cx="512" cy="92" r="52" fill="#e8a030"/>
+  <circle cx="512" cy="92" r="78" fill="none" stroke="#e8a030" stroke-width="7" opacity=".28"/>
+  <!-- Secondary star (top right arc) -->
+  <circle cx="880" cy="268" r="22" fill="#e8a030" opacity=".65"/>
+  <!-- Small stars scattered -->
+  <circle cx="186" cy="210" r="14" fill="#5a7fd4" opacity=".5"/>
+  <circle cx="940" cy="590" r="12" fill="#e8a030" opacity=".4"/>
+  <circle cx="124" cy="650" r="10" fill="#5a7fd4" opacity=".35"/>
+  <circle cx="820" cy="880" r="10" fill="#5a7fd4" opacity=".3"/>
+  <circle cx="300" cy="880" r="8" fill="#e8a030" opacity=".28"/>
+  <!-- Centre anchor dot (Kaaba) -->
+  <circle cx="512" cy="512" r="28" fill="#e8a030" opacity=".92"/>
+</svg>

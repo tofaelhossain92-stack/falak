@@ -1,0 +1,23 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="230" fill="#3558b8"/>
+  <!-- Outer orbit ring -->
+  <ellipse cx="512" cy="512" rx="420" ry="420" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="6"/>
+  <ellipse cx="512" cy="512" rx="300" ry="300" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="4"/>
+  <!-- Orbit arc highlight -->
+  <path d="M 512 92 A 420 420 0 0 1 891 270" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="14" stroke-linecap="round"/>
+  <!-- Crescent body (white) -->
+  <circle cx="512" cy="512" r="285" fill="rgba(255,255,255,0.92)"/>
+  <circle cx="626" cy="430" r="243" fill="#3558b8"/>
+  <!-- Crescent rim -->
+  <circle cx="512" cy="512" r="285" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="6"/>
+  <!-- Orbital star -->
+  <circle cx="512" cy="92" r="52" fill="#e8a030"/>
+  <circle cx="512" cy="92" r="78" fill="none" stroke="#e8a030" stroke-width="7" opacity=".3"/>
+  <!-- Secondary star -->
+  <circle cx="880" cy="268" r="22" fill="rgba(255,255,255,0.7)"/>
+  <!-- Small stars -->
+  <circle cx="186" cy="210" r="14" fill="rgba(255,255,255,0.45)"/>
+  <circle cx="940" cy="590" r="12" fill="#e8a030" opacity=".5"/>
+  <!-- Centre dot -->
+  <circle cx="512" cy="512" r="28" fill="#e8a030" opacity=".92"/>
+</svg>
