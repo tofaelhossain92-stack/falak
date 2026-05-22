@@ -1,620 +1,695 @@
+import { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, SafeAreaView, Alert
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import {
-  colors,
-  fonts,
-  fontSizes,
-  spacing,
-  radius,
-  shadows,
-} from '../../brand/tokens/brand-tokens';
+import { colors, fonts, fontSizes, radius, spacing } from '../../brand/tokens/brand-tokens';
 
-// ── Mock data ──────────────────────────────────────────────────────────────────
-
-const HIJRI = { day: 17, month: "Dhul Qa'dah", year: 1447 };
-const NEXT = { name: 'Fajr', arabic: 'الفجر', time: '4:02 AM', minutesLeft: 52 };
-
-type PrayerStatus = 'past' | 'next' | 'upcoming';
-type Prayer = {
-  id: string;
-  name: string;
-  arabic: string;
-  time: string;
-  status: PrayerStatus;
-  isFard: boolean;
-};
-
-const PRAYERS: Prayer[] = [
-  { id: 'fajr',    name: 'Fajr',    arabic: 'الفجر',  time: '4:02 AM',  status: 'next',     isFard: true  },
-  { id: 'sunrise', name: 'Sunrise', arabic: 'الشروق', time: '5:52 AM',  status: 'upcoming', isFard: false },
-  { id: 'dhuhr',   name: 'Dhuhr',   arabic: 'الظهر',  time: '1:28 PM',  status: 'upcoming', isFard: true  },
-  { id: 'asr',     name: 'Asr',     arabic: 'العصر',  time: '5:47 PM',  status: 'upcoming', isFard: true  },
-  { id: 'maghrib', name: 'Maghrib', arabic: 'المغرب', time: '9:07 PM',  status: 'past',     isFard: true  },
-  { id: 'isha',    name: 'Isha',    arabic: 'العشاء', time: '10:57 PM', status: 'past',     isFard: true  },
+// ── Mock prayer data ──────────────────────────────────────────────
+const PRAYERS = [
+  { name: 'Fajr',    arabic: 'الفجر', time: '4:38 AM',  icon: '🌙', done: false, isNext: true  },
+  { name: 'Sunrise', arabic: 'الشروق', time: '6:12 AM', icon: '🌅', done: false, isNext: false, isSunrise: true },
+  { name: 'Dhuhr',   arabic: 'الظهر', time: '1:27 PM',  icon: '☀️', done: true,  isNext: false },
+  { name: 'Asr',     arabic: 'العصر', time: '5:14 PM',  icon: '🌤️', done: true,  isNext: false },
+  { name: 'Maghrib', arabic: 'المغرب', time: '9:08 PM', icon: '🌇', done: true,  isNext: false },
+  { name: 'Isha',    arabic: 'العشاء', time: '10:48 PM',icon: '🌃', done: true,  isNext: false },
 ];
 
-const TAHAJJUD = { start: '2:10 AM', end: '3:50 AM' };
-const QIBLA = { degrees: 31, direction: 'NE', city: 'Edmonton' };
-const AYAH = {
-  ref: 'An-Nisa 4:103',
-  arabic: 'إِنَّ ٱلصَّلَوٰةَ كَانَتۡ عَلَى ٱلۡمُؤۡمِنِينَ كِتَٰبٗا مَّوۡقُوتٗا',
-  english: 'Indeed, prayer has been decreed upon the believers a decree of specified times.',
-};
+const HIJRI = '17 Dhul Qaʿdah 1447 AH';
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+const AYAH_ARABIC = 'إِنَّ ٱلصَّلَوٰةَ كَانَتْ عَلَى ٱلْمُؤْمِنِينَ كِتَـٰبًۭا مَّوْقُوتًۭا';
+const AYAH_ENGLISH = '"Indeed, prayer has been decreed upon the believers a decree of specified times."';
+const AYAH_REF = 'Surah An-Nisa 4:103';
 
-function SectionHeader({
-  icon,
-  title,
-  tint = colors.primary,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  title: string;
-  tint?: string;
-}) {
-  return (
-    <View style={styles.sectionHeader}>
-      <Ionicons name={icon} size={13} color={tint} />
-      <Text style={styles.sectionTitle}>{title}</Text>
-    </View>
-  );
+// ── Countdown timer ───────────────────────────────────────────────
+function useCountdown() {
+  const [mins, setMins] = useState(52);
+  useEffect(() => {
+    const t = setInterval(() => setMins(m => m > 0 ? m - 1 : 0), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function ActionBtn({
-  label,
-  active,
-  tint,
-}: {
-  label: string;
-  active: boolean;
-  tint: string;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.actionBtn, { borderColor: active ? tint : colors.borderDark }]}
-      activeOpacity={0.7}
-    >
-      <Text style={[styles.actionBtnText, { color: active ? tint : colors.textDarkTertiary }]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
+// ── AI suggestion handler ─────────────────────────────────────────
+function showAI(type: string, prayer: string) {
+  const messages: Record<string, string> = {
+    after: `After ${prayer} — AI suggestions coming soon!\n\nThis will show dhikr and tasks based on Quran & Hadith.`,
+    nafl:  `Nafl prayers for ${prayer} — coming soon!\n\nThis will show Sunnah rak'ahs with Hadith references.`,
+  };
+  Alert.alert(type === 'after' ? `After ${prayer}` : `Nafl — ${prayer}`, messages[type]);
 }
 
-function PrayerCard({ prayer }: { prayer: Prayer }) {
-  const isPast = prayer.status === 'past';
-  const isNext = prayer.status === 'next';
-
-  return (
-    <View style={[styles.prayerCard, isNext && styles.prayerCardNext]}>
-      {/* Status indicator */}
-      <View style={styles.prayerIndicator}>
-        {isPast ? (
-          <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-        ) : isNext ? (
-          <View style={styles.nextDot} />
-        ) : (
-          <View style={styles.upcomingDot} />
-        )}
-      </View>
-
-      {/* Name + action buttons */}
-      <View style={styles.prayerCenter}>
-        <View style={styles.prayerNameRow}>
-          <Text
-            style={[
-              styles.prayerName,
-              isPast && styles.prayerNamePast,
-              isNext && styles.prayerNameNext,
-            ]}
-          >
-            {prayer.name}
-          </Text>
-          <Text style={[styles.prayerArabic, isPast && styles.prayerArabicPast]}>
-            {prayer.arabic}
-          </Text>
-        </View>
-        {prayer.isFard && (
-          <View style={styles.actionRow}>
-            <ActionBtn label="After Prayer" active={isNext} tint={colors.primary} />
-            <ActionBtn label="Nafl" active={isNext} tint={colors.prayer} />
-          </View>
-        )}
-      </View>
-
-      {/* Time */}
-      <Text
-        style={[
-          styles.prayerTime,
-          isPast && styles.prayerTimePast,
-          isNext && styles.prayerTimeNext,
-        ]}
-      >
-        {prayer.time}
-      </Text>
-    </View>
-  );
-}
-
-// ── Screen ─────────────────────────────────────────────────────────────────────
-
+// ── Main component ────────────────────────────────────────────────
 export default function PrayerScreen() {
-  const insets = useSafeAreaInsets();
+  const countdown = useCountdown();
+  const [checkedPrayers, setCheckedPrayers] = useState<Record<string, boolean>>(
+    Object.fromEntries(PRAYERS.map(p => [p.name, p.done]))
+  );
+
+  const togglePrayer = (name: string) => {
+    setCheckedPrayers(prev => ({ ...prev, [name]: !prev[name] }));
+  };
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: insets.top + spacing['5'], paddingBottom: spacing['12'] },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <View style={styles.header}>
-        <View style={styles.locationRow}>
-          <Ionicons name="location-sharp" size={13} color={colors.primary} />
-          <Text style={styles.locationText}>Edmonton, AB</Text>
-        </View>
-        <View style={styles.hijriChip}>
-          <Text style={styles.hijriText}>
-            {HIJRI.day} {HIJRI.month} {HIJRI.year}
-          </Text>
-        </View>
-      </View>
+    <SafeAreaView style={s.safe}>
+      <ScrollView style={s.scroll} showsVerticalScrollIndicator={false}>
 
-      {/* ── Next Prayer Banner ─────────────────────────────────────────────── */}
-      <View style={styles.nextBanner}>
-        <View>
-          <Text style={styles.nextLabel}>NEXT PRAYER</Text>
-          <View style={styles.nextNameRow}>
-            <Text style={styles.nextName}>{NEXT.name}</Text>
-            <Text style={styles.nextArabic}>{NEXT.arabic}</Text>
-          </View>
-          <Text style={styles.nextTime}>{NEXT.time}</Text>
-        </View>
-        <View style={styles.countdown}>
-          <View style={styles.countdownRow}>
-            <Text style={styles.countdownNum}>{NEXT.minutesLeft}</Text>
-            <Text style={styles.countdownUnit}>min</Text>
-          </View>
-          <Text style={styles.countdownLabel}>remaining</Text>
-        </View>
-      </View>
-
-      {/* ── Today's Prayers ────────────────────────────────────────────────── */}
-      <SectionHeader icon="list-outline" title="Today's Prayers" />
-      <View style={styles.prayerList}>
-        {PRAYERS.map((p) => (
-          <PrayerCard key={p.id} prayer={p} />
-        ))}
-      </View>
-
-      {/* ── Tahajjud ───────────────────────────────────────────────────────── */}
-      <SectionHeader icon="moon-outline" title="Night Prayer" tint={colors.prayer} />
-      <View style={styles.tahajjudCard}>
-        <View style={styles.tahajjudLeft}>
-          <View style={styles.tahajjudIcon}>
-            <Ionicons name="moon" size={22} color={colors.prayer} />
-          </View>
+        {/* ── Top bar ── */}
+        <View style={s.topBar}>
           <View>
-            <Text style={styles.tahajjudName}>Tahajjud</Text>
-            <Text style={styles.tahajjudSub}>Night Voluntary Prayer</Text>
+            <Text style={s.screenTitle}>Prayer times</Text>
+            <Text style={s.hijri}>{HIJRI}</Text>
+          </View>
+          <Text style={s.location}>📍 Edmonton, AB</Text>
+        </View>
+
+        {/* ── Next prayer banner ── */}
+        <View style={s.nextBanner}>
+          <View>
+            <Text style={s.nextLabel}>Next prayer</Text>
+            <Text style={s.nextName}>🌙 Fajr</Text>
+            <Text style={s.nextArabic}>الفجر · 4:38 AM</Text>
+          </View>
+          <View style={s.countdownBox}>
+            <Text style={s.countdownNum}>{countdown}</Text>
+            <Text style={s.countdownLabel}>remaining</Text>
           </View>
         </View>
-        <View style={styles.tahajjudRight}>
-          <Text style={styles.tahajjudTime}>
-            {TAHAJJUD.start} – {TAHAJJUD.end}
-          </Text>
-          <Text style={styles.tahajjudActive}>Active now</Text>
-        </View>
-      </View>
 
-      {/* ── Qibla Direction ────────────────────────────────────────────────── */}
-      <SectionHeader icon="compass-outline" title="Qibla Direction" />
-      <View style={styles.qiblaCard}>
-        <View style={styles.compassRing}>
-          <Ionicons
-            name="navigate"
-            size={28}
-            color={colors.primary}
-            style={{ transform: [{ rotate: `${QIBLA.degrees}deg` }] }}
-          />
+        {/* ── Progress bar ── */}
+        <View style={s.progressTrack}>
+          <View style={[s.progressFill, { width: '65%' }]} />
         </View>
-        <View style={styles.qiblaInfo}>
-          <Text style={styles.qiblaDegrees}>
-            {QIBLA.degrees}° {QIBLA.direction}
-          </Text>
-          <Text style={styles.qiblaCity}>from {QIBLA.city}</Text>
-          <Text style={styles.qiblaLabel}>Toward the Ka'bah</Text>
-        </View>
-      </View>
 
-      {/* ── Daily Ayah ────────────────────────────────────────────────────── */}
-      <SectionHeader icon="book-outline" title="Daily Ayah" tint={colors.accent} />
-      <View style={styles.ayahCard}>
-        <View style={styles.ayahRefRow}>
-          <Ionicons name="bookmark" size={12} color={colors.accent} />
-          <Text style={styles.ayahRef}>{AYAH.ref}</Text>
+        {/* ── Section label ── */}
+        <Text style={s.sectionLabel}>Today's prayers</Text>
+
+        {/* ── Prayer list ── */}
+        {PRAYERS.map((prayer) => {
+          const isDone = checkedPrayers[prayer.name];
+          const isNext = prayer.isNext;
+          return (
+            <View
+              key={prayer.name}
+              style={[
+                s.prayerCard,
+                isNext && s.prayerCardNext,
+                isDone && !isNext && s.prayerCardDone,
+              ]}
+            >
+              {/* Prayer row */}
+              <View style={s.prayerRow}>
+                <View style={s.prayerLeft}>
+                  {/* Checkbox */}
+                  <TouchableOpacity
+                    style={[s.checkbox, isDone && s.checkboxDone]}
+                    onPress={() => togglePrayer(prayer.name)}
+                  >
+                    {isDone && <Text style={s.checkmark}>✓</Text>}
+                  </TouchableOpacity>
+                  {/* Icon + name */}
+                  <View>
+                    <Text style={[s.prayerName, isDone && !isNext && s.textDim]}>
+                      {prayer.icon} {prayer.name}
+                    </Text>
+                    <Text style={[s.prayerArabic, isDone && !isNext && s.textDim]}>
+                      {prayer.arabic}
+                    </Text>
+                  </View>
+                </View>
+                <View style={s.prayerRight}>
+                  <Text style={[s.prayerTime, isNext && s.prayerTimeNext]}>
+                    {prayer.time}
+                  </Text>
+                  {isNext && (
+                    <Text style={s.prayerCountdownSmall}>{countdown}</Text>
+                  )}
+                </View>
+              </View>
+
+              {/* AI buttons — only for fard prayers (not Sunrise) */}
+              {!prayer.isSunrise && (
+                <View style={s.aiRow}>
+                  <TouchableOpacity
+                    style={s.aiBtn}
+                    onPress={() => showAI('after', prayer.name)}
+                  >
+                    <Text style={s.aiBtnIcon}>🤲</Text>
+                    <View>
+                      <Text style={s.aiBtnTitle}>After {prayer.name}</Text>
+                      <Text style={s.aiBtnSub}>AI tasks & dhikr</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.aiBtn, s.aiBtnGold]}
+                    onPress={() => showAI('nafl', prayer.name)}
+                  >
+                    <Text style={s.aiBtnIcon}>📿</Text>
+                    <View>
+                      <Text style={s.aiBtnTitle}>Nafl prayers</Text>
+                      <Text style={s.aiBtnSub}>Sunnah guide</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          );
+        })}
+
+        {/* ── Tahajjud card ── */}
+        <Text style={s.sectionLabel}>Night prayer</Text>
+        <View style={s.tahajjudCard}>
+          <View style={s.tahajjudHeader}>
+            <View style={s.tahajjudLeft}>
+              <Text style={s.tahajjudIcon}>🌌</Text>
+              <View>
+                <Text style={s.tahajjudTitle}>Tahajjud</Text>
+                <Text style={s.tahajjudArabic}>تهجد · Night vigil prayer</Text>
+              </View>
+            </View>
+            <View style={s.tahajjudTimeBox}>
+              <Text style={s.tahajjudTime}>2:10 – 3:50 AM</Text>
+              <Text style={s.tahajjudTimeSub}>Last third of night</Text>
+            </View>
+          </View>
+
+          {/* Time window bar */}
+          <View style={s.timeBar}>
+            <View style={s.timeBarFill} />
+          </View>
+          <View style={s.timeBarLabels}>
+            <Text style={s.timeBarLabel}>Isha 10:48 PM</Text>
+            <Text style={[s.timeBarLabel, { color: colors.prayer }]}>Best: last third ↑</Text>
+            <Text style={s.timeBarLabel}>Fajr 4:38 AM</Text>
+          </View>
+
+          {/* Divider */}
+          <View style={s.divider} />
+
+          {/* Tahajjud AI buttons */}
+          <View style={s.tahajjudBtns}>
+            <TouchableOpacity style={s.tahajjudBtn} onPress={() => Alert.alert('How to pray Tahajjud', 'AI guide coming soon — will include step-by-step with Hadith references.')}>
+              <Text style={s.tahajjudBtnIcon}>🤲</Text>
+              <Text style={s.tahajjudBtnTitle}>How to pray</Text>
+              <Text style={s.tahajjudBtnSub}>AI guide + hadith</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.tahajjudBtn} onPress={() => Alert.alert('Duʿas for Tahajjud', 'Sunnah supplications coming soon.')}>
+              <Text style={s.tahajjudBtnIcon}>📖</Text>
+              <Text style={s.tahajjudBtnTitle}>Duʿas to recite</Text>
+              <Text style={s.tahajjudBtnSub}>Sunnah supplications</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.tahajjudBtn} onPress={() => Alert.alert('Virtue of Tahajjud', 'Quranic and Hadith references coming soon.')}>
+              <Text style={s.tahajjudBtnIcon}>⭐</Text>
+              <Text style={s.tahajjudBtnTitle}>Virtue</Text>
+              <Text style={s.tahajjudBtnSub}>Quran & hadith</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <Text style={styles.ayahArabic}>{AYAH.arabic}</Text>
-        <View style={styles.ayahDivider} />
-        <Text style={styles.ayahEnglish}>{AYAH.english}</Text>
-      </View>
-    </ScrollView>
+
+        {/* Witr reminder */}
+        <View style={s.witrCard}>
+          <Text style={s.witrIcon}>🌙</Text>
+          <View style={s.witrBody}>
+            <Text style={s.witrTitle}>Witr prayer</Text>
+            <Text style={s.witrSub}>After Tahajjud · before Fajr</Text>
+          </View>
+          <Text style={s.witrRakah}>3 rakʿahs</Text>
+        </View>
+
+        {/* ── Qibla card ── */}
+        <Text style={s.sectionLabel}>Qibla direction</Text>
+        <View style={s.qiblaCard}>
+          <Text style={s.qiblaIcon}>🧭</Text>
+          <View style={s.qiblaBody}>
+            <Text style={s.qiblaTitle}>Edmonton faces <Text style={s.qiblaAngle}>31° NE</Text> toward Makkah</Text>
+            <Text style={s.qiblaSub}>Face northeast when praying</Text>
+          </View>
+        </View>
+
+        {/* ── Daily Ayah ── */}
+        <Text style={s.sectionLabel}>Daily reminder</Text>
+        <View style={s.ayahCard}>
+          <Text style={s.ayahArabic}>{AYAH_ARABIC}</Text>
+          <View style={s.ayahDivider} />
+          <Text style={s.ayahEnglish}>{AYAH_ENGLISH}</Text>
+          <Text style={s.ayahRef}>{AYAH_REF}</Text>
+        </View>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  screen: {
+// ── Styles ────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  safe: {
     flex: 1,
     backgroundColor: colors.bgDark,
   },
-  content: {
-    paddingHorizontal: spacing['5'],
+  scroll: {
+    flex: 1,
+    paddingHorizontal: spacing[4],
   },
 
-  // Header
-  header: {
+  // Top bar
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing['5'],
+    alignItems: 'flex-start',
+    paddingTop: spacing[4],
+    paddingBottom: spacing[2],
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['1'],
-  },
-  locationText: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.base,
+  screenTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '500',
     color: colors.textDarkPrimary,
+    fontFamily: fonts.medium,
   },
-  hijriChip: {
-    backgroundColor: colors.accentSubtle,
-    borderRadius: radius.full,
-    paddingVertical: spacing['1'],
-    paddingHorizontal: spacing['3'],
-    borderWidth: 1,
-    borderColor: colors.accentSubtle,
-  },
-  hijriText: {
-    fontFamily: fonts.body,
+  hijri: {
     fontSize: fontSizes.xs,
     color: colors.accent,
-    letterSpacing: 0.3,
+    marginTop: 2,
+    fontFamily: fonts.body,
+  },
+  location: {
+    fontSize: fontSizes.sm,
+    color: colors.textDarkSecondary,
+    fontFamily: fonts.body,
   },
 
   // Next prayer banner
   nextBanner: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.xl,
-    padding: spacing['5'],
+    backgroundColor: `${colors.primary}18`,
+    borderWidth: 0.5,
+    borderColor: `${colors.primary}55`,
+    borderRadius: radius.lg,
+    padding: spacing[4],
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing['6'],
-    ...shadows.card,
+    marginVertical: spacing[2],
   },
   nextLabel: {
-    fontFamily: fonts.medium,
     fontSize: fontSizes.xs,
-    color: colors.textDarkSecondary,
-    letterSpacing: 1.2,
-    marginBottom: spacing['1'],
-  },
-  nextNameRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing['2'],
-    marginBottom: spacing['1'],
+    color: `${colors.primary}aa`,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+    fontFamily: fonts.medium,
   },
   nextName: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes['3xl'],
+    fontSize: fontSizes.xl,
+    fontWeight: '500',
     color: colors.textDarkPrimary,
-    includeFontPadding: false,
+    fontFamily: fonts.medium,
   },
   nextArabic: {
-    fontFamily: fonts.display,
-    fontSize: fontSizes.xl,
+    fontSize: fontSizes.sm,
     color: colors.textDarkSecondary,
-  },
-  nextTime: {
+    marginTop: 2,
     fontFamily: fonts.body,
-    fontSize: fontSizes.md,
-    color: colors.textDarkSecondary,
   },
-  countdown: {
-    alignItems: 'center',
-    gap: spacing['1'],
-  },
-  countdownRow: {
-    flexDirection: 'row',
+  countdownBox: {
     alignItems: 'flex-end',
-    gap: 3,
   },
   countdownNum: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: colors.primary,
     fontFamily: fonts.light,
-    fontSize: fontSizes['4xl'],
-    color: colors.textDarkPrimary,
-    includeFontPadding: false,
-    lineHeight: fontSizes['4xl'] * 1.1,
-  },
-  countdownUnit: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.lg,
-    color: colors.textDarkSecondary,
-    paddingBottom: 4,
   },
   countdownLabel: {
-    fontFamily: fonts.body,
     fontSize: fontSizes.xs,
     color: colors.textDarkTertiary,
-    letterSpacing: 0.5,
+    fontFamily: fonts.body,
   },
 
-  // Section header
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['2'],
-    marginBottom: spacing['3'],
+  // Progress bar
+  progressTrack: {
+    height: 3,
+    backgroundColor: `${colors.primary}20`,
+    borderRadius: radius.full,
+    marginBottom: spacing[4],
+    overflow: 'hidden',
   },
-  sectionTitle: {
-    fontFamily: fonts.medium,
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+  },
+
+  // Section label
+  sectionLabel: {
     fontSize: fontSizes.xs,
-    color: colors.textDarkSecondary,
+    fontWeight: '500',
+    color: colors.textDarkTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-
-  // Prayer list
-  prayerList: {
-    gap: spacing['2'],
-    marginBottom: spacing['8'],
+    letterSpacing: 0.8,
+    marginBottom: spacing[2],
+    marginTop: spacing[4],
+    fontFamily: fonts.medium,
   },
 
   // Prayer card
   prayerCard: {
     backgroundColor: colors.bgDarkCard,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: colors.borderDark,
     borderRadius: radius.lg,
-    paddingVertical: spacing['3'],
-    paddingHorizontal: spacing['4'],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['3'],
-    ...shadows.card,
+    padding: spacing[3],
+    marginBottom: spacing[2],
   },
   prayerCardNext: {
-    borderColor: colors.primary,
-    backgroundColor: colors.bgDarkCardHover,
+    backgroundColor: `${colors.primary}0d`,
+    borderColor: `${colors.primary}55`,
   },
-  prayerIndicator: {
-    width: 24,
+  prayerCardDone: {
+    opacity: 0.55,
+  },
+  prayerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  nextDot: {
-    width: 10,
-    height: 10,
-    borderRadius: radius.full,
-    backgroundColor: colors.primary,
+  prayerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
   },
-  upcomingDot: {
-    width: 8,
-    height: 8,
+  checkbox: {
+    width: 20,
+    height: 20,
     borderRadius: radius.full,
     borderWidth: 1.5,
     borderColor: colors.borderDark,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  prayerCenter: {
-    flex: 1,
-    gap: spacing['2'],
+  checkboxDone: {
+    backgroundColor: '#4ade80',
+    borderColor: '#4ade80',
   },
-  prayerNameRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing['2'],
+  checkmark: {
+    fontSize: 10,
+    color: colors.bgDark,
+    fontWeight: '700',
   },
   prayerName: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.base,
+    fontSize: fontSizes.md,
+    fontWeight: '500',
     color: colors.textDarkPrimary,
-  },
-  prayerNamePast: {
-    color: colors.textDarkTertiary,
-  },
-  prayerNameNext: {
-    color: colors.primary,
+    fontFamily: fonts.medium,
   },
   prayerArabic: {
-    fontFamily: fonts.display,
-    fontSize: fontSizes.md,
-    color: colors.textDarkSecondary,
-  },
-  prayerArabicPast: {
-    color: colors.textDarkTertiary,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: spacing['2'],
-  },
-  actionBtn: {
-    paddingVertical: 3,
-    paddingHorizontal: spacing['2'],
-    borderRadius: radius.sm,
-    borderWidth: 1,
-  },
-  actionBtnText: {
-    fontFamily: fonts.body,
     fontSize: fontSizes.xs,
-    letterSpacing: 0.2,
+    color: colors.textDarkTertiary,
+    marginTop: 1,
+    fontFamily: fonts.body,
+  },
+  prayerRight: {
+    alignItems: 'flex-end',
   },
   prayerTime: {
+    fontSize: fontSizes.md,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
     fontFamily: fonts.medium,
-    fontSize: fontSizes.sm,
-    color: colors.textDarkSecondary,
-  },
-  prayerTimePast: {
-    color: colors.textDarkTertiary,
   },
   prayerTimeNext: {
     color: colors.primary,
   },
+  prayerCountdownSmall: {
+    fontSize: fontSizes.xs,
+    color: colors.primary,
+    marginTop: 1,
+    fontFamily: fonts.body,
+  },
+  textDim: {
+    color: colors.textDarkTertiary,
+  },
 
-  // Tahajjud card
+  // AI buttons
+  aiRow: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginTop: spacing[3],
+    paddingTop: spacing[3],
+    borderTopWidth: 0.5,
+    borderTopColor: colors.borderDark,
+  },
+  aiBtn: {
+    flex: 1,
+    backgroundColor: `${colors.primary}12`,
+    borderWidth: 0.5,
+    borderColor: `${colors.primary}25`,
+    borderRadius: radius.md,
+    padding: spacing[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  aiBtnGold: {
+    backgroundColor: `${colors.accent}0a`,
+    borderColor: `${colors.accent}22`,
+  },
+  aiBtnIcon: {
+    fontSize: 14,
+  },
+  aiBtnTitle: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
+    fontFamily: fonts.medium,
+  },
+  aiBtnSub: {
+    fontSize: 10,
+    color: colors.textDarkTertiary,
+    marginTop: 1,
+    fontFamily: fonts.body,
+  },
+
+  // Tahajjud
   tahajjudCard: {
-    backgroundColor: colors.prayerSubtle,
-    borderWidth: 1,
-    borderColor: colors.prayer,
+    backgroundColor: `${colors.prayer}0a`,
+    borderWidth: 0.5,
+    borderColor: `${colors.prayer}35`,
     borderRadius: radius.lg,
-    padding: spacing['4'],
+    padding: spacing[4],
+    marginBottom: spacing[2],
+  },
+  tahajjudHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing['8'],
-    ...shadows.card,
+    marginBottom: spacing[3],
   },
   tahajjudLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing['3'],
+    gap: spacing[3],
   },
   tahajjudIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.prayerSubtle,
-    borderWidth: 1,
-    borderColor: colors.prayer,
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontSize: 24,
   },
-  tahajjudName: {
+  tahajjudTitle: {
+    fontSize: fontSizes.md,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
     fontFamily: fonts.medium,
-    fontSize: fontSizes.base,
-    color: colors.prayer,
   },
-  tahajjudSub: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.xs,
-    color: colors.textDarkSecondary,
-    marginTop: 2,
-  },
-  tahajjudRight: {
-    alignItems: 'flex-end',
-    gap: spacing['1'],
-  },
-  tahajjudTime: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.sm,
-    color: colors.prayer,
-  },
-  tahajjudActive: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.xs,
-    color: colors.success,
-    letterSpacing: 0.3,
-  },
-
-  // Qibla card
-  qiblaCard: {
-    backgroundColor: colors.bgDarkCard,
-    borderWidth: 1,
-    borderColor: colors.borderDark,
-    borderRadius: radius.lg,
-    padding: spacing['4'],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['4'],
-    marginBottom: spacing['8'],
-    ...shadows.card,
-  },
-  compassRing: {
-    width: 68,
-    height: 68,
-    borderRadius: radius.full,
-    borderWidth: 1.5,
-    borderColor: colors.borderDark,
-    backgroundColor: colors.bgDarkCardHover,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  qiblaInfo: {
-    flex: 1,
-    gap: spacing['1'],
-  },
-  qiblaDegrees: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes['2xl'],
-    color: colors.primary,
-    includeFontPadding: false,
-  },
-  qiblaCity: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.sm,
-    color: colors.textDarkSecondary,
-  },
-  qiblaLabel: {
-    fontFamily: fonts.body,
+  tahajjudArabic: {
     fontSize: fontSizes.xs,
     color: colors.textDarkTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginTop: spacing['1'],
+    marginTop: 1,
+    fontFamily: fonts.body,
+  },
+  tahajjudTimeBox: {
+    alignItems: 'flex-end',
+  },
+  tahajjudTime: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
+    color: colors.prayer,
+    fontFamily: fonts.medium,
+  },
+  tahajjudTimeSub: {
+    fontSize: fontSizes.xs,
+    color: colors.textDarkTertiary,
+    marginTop: 1,
+    fontFamily: fonts.body,
+  },
+  timeBar: {
+    height: 4,
+    backgroundColor: `${colors.prayer}15`,
+    borderRadius: radius.full,
+    marginBottom: spacing[1],
+    overflow: 'hidden',
+  },
+  timeBarFill: {
+    position: 'absolute',
+    left: '62%',
+    width: '25%',
+    height: '100%',
+    backgroundColor: colors.prayer,
+    borderRadius: radius.full,
+  },
+  timeBarLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing[3],
+  },
+  timeBarLabel: {
+    fontSize: 9,
+    color: colors.textDarkTertiary,
+    fontFamily: fonts.body,
+  },
+  divider: {
+    height: 0.5,
+    backgroundColor: `${colors.prayer}18`,
+    marginBottom: spacing[3],
+  },
+  tahajjudBtns: {
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
+  tahajjudBtn: {
+    flex: 1,
+    backgroundColor: `${colors.prayer}0d`,
+    borderWidth: 0.5,
+    borderColor: `${colors.prayer}22`,
+    borderRadius: radius.md,
+    padding: spacing[2],
+    alignItems: 'center',
+    gap: 4,
+  },
+  tahajjudBtnIcon: {
+    fontSize: 16,
+  },
+  tahajjudBtnTitle: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
+    textAlign: 'center',
+    fontFamily: fonts.medium,
+  },
+  tahajjudBtnSub: {
+    fontSize: 9,
+    color: colors.textDarkTertiary,
+    textAlign: 'center',
+    fontFamily: fonts.body,
   },
 
-  // Daily Ayah card
-  ayahCard: {
-    backgroundColor: colors.accentSubtle,
-    borderWidth: 1,
-    borderColor: colors.accentSubtle,
+  // Witr
+  witrCard: {
+    backgroundColor: colors.bgDarkCard,
+    borderWidth: 0.5,
+    borderColor: colors.borderDark,
     borderRadius: radius.lg,
-    padding: spacing['5'],
-    gap: spacing['4'],
-    ...shadows.card,
-  },
-  ayahRefRow: {
+    padding: spacing[3],
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing['2'],
+    gap: spacing[3],
+    marginBottom: spacing[2],
   },
-  ayahRef: {
+  witrIcon: {
+    fontSize: 20,
+  },
+  witrBody: {
+    flex: 1,
+  },
+  witrTitle: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
     fontFamily: fonts.medium,
+  },
+  witrSub: {
     fontSize: fontSizes.xs,
-    color: colors.accent,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    color: colors.textDarkTertiary,
+    marginTop: 1,
+    fontFamily: fonts.body,
+  },
+  witrRakah: {
+    fontSize: fontSizes.xs,
+    color: colors.textDarkSecondary,
+    fontFamily: fonts.body,
+  },
+
+  // Qibla
+  qiblaCard: {
+    backgroundColor: colors.bgDarkCard,
+    borderWidth: 0.5,
+    borderColor: colors.borderDark,
+    borderRadius: radius.lg,
+    padding: spacing[4],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[4],
+    marginBottom: spacing[2],
+  },
+  qiblaIcon: {
+    fontSize: 32,
+  },
+  qiblaBody: {
+    flex: 1,
+  },
+  qiblaTitle: {
+    fontSize: fontSizes.md,
+    color: colors.textDarkPrimary,
+    fontFamily: fonts.body,
+    lineHeight: 22,
+  },
+  qiblaAngle: {
+    fontWeight: '500',
+    color: colors.primary,
+    fontFamily: fonts.medium,
+  },
+  qiblaSub: {
+    fontSize: fontSizes.xs,
+    color: colors.textDarkTertiary,
+    marginTop: 4,
+    fontFamily: fonts.body,
+  },
+
+  // Ayah
+  ayahCard: {
+    backgroundColor: `${colors.accent}08`,
+    borderWidth: 0.5,
+    borderColor: `${colors.accent}25`,
+    borderRadius: radius.lg,
+    padding: spacing[4],
+    marginBottom: spacing[2],
   },
   ayahArabic: {
-    fontFamily: fonts.display,
-    fontSize: fontSizes.xl,
+    fontSize: 18,
     color: colors.textDarkPrimary,
     textAlign: 'right',
-    lineHeight: fontSizes.xl * 2,
+    lineHeight: 32,
+    fontFamily: fonts.serif,
+    marginBottom: spacing[3],
   },
   ayahDivider: {
-    height: 1,
-    backgroundColor: colors.borderDark,
+    height: 0.5,
+    backgroundColor: `${colors.accent}20`,
+    marginBottom: spacing[3],
   },
   ayahEnglish: {
-    fontFamily: fonts.body,
     fontSize: fontSizes.sm,
     color: colors.textDarkSecondary,
-    lineHeight: fontSizes.sm * 1.7,
+    lineHeight: 22,
     fontStyle: 'italic',
+    fontFamily: fonts.body,
+    marginBottom: spacing[2],
   },
+  ayahRef: {
+    fontSize: fontSizes.xs,
+    color: colors.accent,
+    fontFamily: fonts.medium,
+  },
+  bgDarkCard: colors.bgDarkCard,
+  borderDark: colors.borderDark,
 });
