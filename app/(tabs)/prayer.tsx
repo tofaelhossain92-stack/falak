@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, Alert
+  StyleSheet, Alert, Switch,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, fontSizes, radius, spacing } from '../../brand/tokens/brand-tokens';
 
 // ── Mock prayer data ──────────────────────────────────────────────

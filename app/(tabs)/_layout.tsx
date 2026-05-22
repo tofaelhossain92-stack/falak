@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, fontSizes } from '../../brand/tokens/brand-tokens';
