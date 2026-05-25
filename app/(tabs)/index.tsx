@@ -1,561 +1,651 @@
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, Switch,
+  StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import {
-  colors,
-  fonts,
-  fontSizes,
-  spacing,
-  radius,
-  shadows,
-} from '../../brand/tokens/brand-tokens';
+import * as Location from 'expo-location';
+import { colors, fonts, fontSizes, radius, spacing } from '../../brand/tokens/brand-tokens';
 
-// ── Mock data ─────────────────────────────────────────────────────────────────
+// ── API config ────────────────────────────────────────────────────
+const API_KEY = process.env.EXPO_PUBLIC_WEATHER_API_KEY;
+const BASE    = 'https://api.openweathermap.org';
 
-const WEATHER = {
-  location: 'Edmonton, AB',
-  updatedAt: '2:47 PM',
-  temp: -15,
-  feelsLike: -23,
-  emoji: '⛅',
-  description: 'Partly Cloudy',
-  windSpeed: 18,
-  windDir: 'NW',
-  sun: {
-    sunrise: '8:14 AM',
-    sunset: '5:02 PM',
-    dewPoint: -18,
-  },
-  hourly: [
-    { time: 'Now',   emoji: '⛅', temp: -15 },
-    { time: '3 PM',  emoji: '⛅', temp: -16 },
-    { time: '4 PM',  emoji: '🌥', temp: -17 },
-    { time: '5 PM',  emoji: '🌥', temp: -18 },
-    { time: '6 PM',  emoji: '🌑', temp: -19 },
-    { time: '7 PM',  emoji: '🌑', temp: -20 },
-    { time: '8 PM',  emoji: '🌑', temp: -21 },
-    { time: '9 PM',  emoji: '❄️', temp: -22 },
-    { time: '10 PM', emoji: '❄️', temp: -23 },
-    { time: '11 PM', emoji: '❄️', temp: -23 },
-    { time: '12 AM', emoji: '❄️', temp: -24 },
-    { time: '1 AM',  emoji: '❄️', temp: -24 },
-  ],
-  daily: [
-    { day: 'Today', emoji: '⛅', high: -14, low: -24 },
-    { day: 'Tue',   emoji: '❄️', high: -18, low: -27 },
-    { day: 'Wed',   emoji: '🌨', high: -12, low: -20 },
-    { day: 'Thu',   emoji: '🌥', high:  -8, low: -15 },
-    { day: 'Fri',   emoji: '☀️', high:  -5, low: -12 },
-    { day: 'Sat',   emoji: '☀️', high:  -3, low:  -9 },
-    { day: 'Sun',   emoji: '🌥', high:  -6, low: -13 },
-  ],
+// ── Weather code → emoji ──────────────────────────────────────────
+const weatherEmoji: Record<string, string> = {
+  '01d':'☀️','01n':'🌙','02d':'⛅','02n':'⛅',
+  '03d':'☁️','03n':'☁️','04d':'☁️','04n':'☁️',
+  '09d':'🌧️','09n':'🌧️','10d':'🌦️','10n':'🌧️',
+  '11d':'⛈️','11n':'⛈️','13d':'❄️','13n':'❄️',
+  '50d':'🌫️','50n':'🌫️',
 };
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────
+const windDir = (deg: number) =>
+  ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg / 45) % 8];
 
-type StatCardProps = { emoji: string; label: string; value: string };
-function StatCard({ emoji, label, value }: StatCardProps) {
-  return (
-    <View style={styles.statCard}>
-      <Text style={styles.statEmoji}>{emoji}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
+const aqiLabel = (v: number) =>
+  ['','Good','Fair','Moderate','Poor','Very Poor'][v] ?? '—';
 
-type HourlyItem = { time: string; emoji: string; temp: number };
-function HourlyCard({ item, active }: { item: HourlyItem; active: boolean }) {
-  return (
-    <View style={[styles.hCard, active && styles.hCardActive]}>
-      <Text style={[styles.hTime, active && styles.hTimeActive]}>{item.time}</Text>
-      <Text style={styles.hEmoji}>{item.emoji}</Text>
-      <Text style={[styles.hTemp, active && styles.hTempActive]}>{item.temp}°</Text>
-    </View>
-  );
-}
+const aqiColor = (v: number) =>
+  ['','#4ade80','#84cc16','#eab308','#f97316','#ef4444'][v] ?? '#888';
 
-type DayItem = { day: string; emoji: string; high: number; low: number };
-function DayCard({ item }: { item: DayItem }) {
-  return (
-    <View style={styles.dayCard}>
-      <Text style={styles.dayName}>{item.day}</Text>
-      <Text style={styles.dayEmoji}>{item.emoji}</Text>
-      <Text style={styles.dayHigh}>{item.high}°</Text>
-      <Text style={styles.dayLow}>{item.low}°</Text>
-    </View>
-  );
-}
+const uvRisk = (v: number) =>
+  v <= 2 ? 'Low' : v <= 5 ? 'Moderate' : v <= 7 ? 'High' : 'Very High';
 
-type AIBtnProps = {
-  label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  tint: string;
+const fmtHour = (ts: number, offset: number) => {
+  const d = new Date((ts + offset) * 1000);
+  const h = d.getUTCHours();
+  return `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
 };
-function AIBtn({ label, icon, tint }: AIBtnProps) {
-  return (
-    <TouchableOpacity
-      style={[styles.aiBtn, { borderColor: tint }]}
-      activeOpacity={0.7}
-    >
-      <Ionicons name={icon} size={20} color={tint} />
-      <Text style={[styles.aiBtnLabel, { color: tint }]}>{label}</Text>
-    </TouchableOpacity>
-  );
+
+const fmtTime = (ts: number, offset: number) => {
+  const d = new Date((ts + offset) * 1000);
+  const h = d.getUTCHours();
+  const m = d.getUTCMinutes();
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+const dayAbbr = (ts: number, offset: number) => {
+  const d = new Date((ts + offset) * 1000);
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
+};
+
+// ── Types ─────────────────────────────────────────────────────────
+interface WeatherData {
+  current: any;
+  hourly:  any[];
+  daily:   any[];
+  tzOffset: number;
 }
 
-// ── Screen ────────────────────────────────────────────────────────────────────
-
+// ── Main component ────────────────────────────────────────────────
 export default function WeatherScreen() {
-  const insets = useSafeAreaInsets();
-  const showWinterAlert = WEATHER.temp < -10;
+  const [data, setData]           = useState<WeatherData | null>(null);
+  const [aqi, setAqi]             = useState<any>(null);
+  const [city, setCity]           = useState('Locating…');
+  const [loading, setLoading]     = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [aiCard, setAiCard]       = useState<{ type: string; text: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [activeAi, setActiveAi]   = useState<string | null>(null);
+  const [time, setTime]           = useState(new Date());
+
+  // Clock tick
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Fetch weather
+  const fetchWeather = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+
+    try {
+      // Get location
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      let lat = 53.5461, lon = -113.4937; // Edmonton fallback
+
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({});
+        lat = loc.coords.latitude;
+        lon = loc.coords.longitude;
+      }
+
+      // Fetch weather + AQI + reverse geocode in parallel
+      const [wRes, aqiRes, geoRes] = await Promise.all([
+        fetch(`${BASE}/data/3.0/onecall?lat=${lat}&lon=${lon}&units=metric&appid=${API_KEY}`),
+        fetch(`${BASE}/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`),
+        fetch(`${BASE}/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${API_KEY}`),
+      ]);
+
+      if (!wRes.ok) throw new Error('Weather fetch failed');
+
+      const [w, aqiData, geo] = await Promise.all([
+        wRes.json(), aqiRes.json(), geoRes.json(),
+      ]);
+
+      setData({
+        current:  w.current,
+        hourly:   w.hourly?.slice(0, 12) ?? [],
+        daily:    w.daily?.slice(0, 7) ?? [],
+        tzOffset: w.timezone_offset ?? 0,
+      });
+      setAqi(aqiData.list?.[0]);
+      if (geo[0]) setCity(`${geo[0].name}, ${geo[0].country}`);
+
+    } catch (e: any) {
+      setError('Could not load weather. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchWeather(); }, [fetchWeather]);
+
+  // ── Render: loading ──
+  if (loading) return (
+    <SafeAreaView style={s.safe}>
+      <View style={s.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={s.loadingText}>Loading your weather…</Text>
+      </View>
+    </SafeAreaView>
+  );
+
+  // ── Render: error ──
+  if (error) return (
+    <SafeAreaView style={s.safe}>
+      <View style={s.center}>
+        <Text style={s.errorIcon}>⚠️</Text>
+        <Text style={s.errorText}>{error}</Text>
+        <TouchableOpacity style={s.retryBtn} onPress={() => fetchWeather()}>
+          <Text style={s.retryText}>Try again</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+
+  const w  = data!.current;
+  const tz = data!.tzOffset;
+  const icon = w.weather[0].icon;
+  const emoji = weatherEmoji[icon] ?? '🌡️';
+  const temp = Math.round(w.temp);
+  const feels = Math.round(w.feels_like);
+  const isWinter = temp < -10;
+
+  const timeStr = time.toLocaleTimeString('en-CA', {
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: insets.top + spacing['5'], paddingBottom: spacing['12'] },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <View style={styles.header}>
-        <View style={styles.locationRow}>
-          <Ionicons name="location-sharp" size={13} color={colors.primary} />
-          <Text style={styles.locationText}>{WEATHER.location}</Text>
-        </View>
-        <Text style={styles.timeText}>Updated {WEATHER.updatedAt}</Text>
-      </View>
-
-      {/* ── Temperature hero ───────────────────────────────────────────────── */}
-      <View style={styles.heroArea}>
-        <View style={styles.tempRow}>
-          <Text style={styles.tempValue}>{WEATHER.temp}</Text>
-          <Text style={styles.tempUnit}>°C</Text>
-        </View>
-        <View style={styles.conditionRow}>
-          <Text style={styles.conditionEmoji}>{WEATHER.emoji}</Text>
-          <Text style={styles.conditionText}>{WEATHER.description}</Text>
-        </View>
-      </View>
-
-      {/* ── Feels like + wind ──────────────────────────────────────────────── */}
-      <View style={styles.metaRow}>
-        <View style={styles.metaChip}>
-          <Ionicons name="thermometer-outline" size={13} color={colors.textDarkSecondary} />
-          <Text style={styles.metaText}>Feels like {WEATHER.feelsLike}°C</Text>
-        </View>
-        <View style={styles.metaSep} />
-        <View style={styles.metaChip}>
-          <Ionicons name="navigate-outline" size={13} color={colors.textDarkSecondary} />
-          <Text style={styles.metaText}>{WEATHER.windDir} · {WEATHER.windSpeed} km/h</Text>
-        </View>
-      </View>
-
-      {/* ── 4-stat grid ────────────────────────────────────────────────────── */}
-      <View style={styles.statGrid}>
-        <StatCard emoji="💧" label="Humidity"    value="72%" />
-        <StatCard emoji="☀️" label="UV Index"    value="1 · Low" />
-        <StatCard emoji="🍃" label="Air Quality" value="34 · Good" />
-        <StatCard emoji="👁" label="Visibility"  value="12 km" />
-      </View>
-
-      {/* ── Sunrise / Sunset / Dew Point ───────────────────────────────────── */}
-      <View style={styles.sunCard}>
-        <View style={styles.sunItem}>
-          <Text style={styles.sunEmoji}>🌅</Text>
-          <Text style={styles.sunValue}>{WEATHER.sun.sunrise}</Text>
-          <Text style={styles.sunLabel}>Sunrise</Text>
-        </View>
-        <View style={styles.sunDivider} />
-        <View style={styles.sunItem}>
-          <Text style={styles.sunEmoji}>🌇</Text>
-          <Text style={styles.sunValue}>{WEATHER.sun.sunset}</Text>
-          <Text style={styles.sunLabel}>Sunset</Text>
-        </View>
-        <View style={styles.sunDivider} />
-        <View style={styles.sunItem}>
-          <Text style={styles.sunEmoji}>🌡</Text>
-          <Text style={styles.sunValue}>{WEATHER.sun.dewPoint}°C</Text>
-          <Text style={styles.sunLabel}>Dew Point</Text>
-        </View>
-      </View>
-
-      {/* ── Hourly forecast ────────────────────────────────────────────────── */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="time-outline" size={13} color={colors.primary} />
-        <Text style={styles.sectionTitle}>Next 12 Hours</Text>
-      </View>
+    <SafeAreaView style={s.safe}>
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.hScroll}
-        contentContainerStyle={styles.hScrollContent}
+        style={s.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchWeather(true)}
+            tintColor={colors.primary}
+          />
+        }
       >
-        {WEATHER.hourly.map((item, i) => (
-          <HourlyCard key={item.time} item={item} active={i === 0} />
-        ))}
-      </ScrollView>
 
-      {/* ── 7-day forecast ─────────────────────────────────────────────────── */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="calendar-outline" size={13} color={colors.primary} />
-        <Text style={styles.sectionTitle}>7-Day Forecast</Text>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.hScroll}
-        contentContainerStyle={styles.hScrollContent}
-      >
-        {WEATHER.daily.map((item) => (
-          <DayCard key={item.day} item={item} />
-        ))}
-      </ScrollView>
-
-      {/* ── Edmonton winter alert ──────────────────────────────────────────── */}
-      {showWinterAlert && (
-        <View style={styles.alertCard}>
-          <View style={styles.alertHeader}>
-            <Ionicons name="warning" size={15} color={colors.warning} />
-            <Text style={styles.alertTitle}>Edmonton Winter Alert</Text>
-          </View>
-          <Text style={styles.alertBody}>
-            Extreme cold warning in effect. Wind chill {WEATHER.feelsLike}°C — limit time
-            outdoors and protect exposed skin within minutes of exposure.
+        {/* ── Top bar ── */}
+        <View style={s.topBar}>
+          <Text style={s.city}>📍 {city}</Text>
+          <Text style={s.timeText}>
+            Updated {timeStr}
           </Text>
         </View>
-      )}
 
-      {/* ── AI suggestions ─────────────────────────────────────────────────── */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="bulb-outline" size={13} color={colors.accent} />
-        <Text style={styles.sectionTitle}>AI Suggestions</Text>
-      </View>
-      <View style={styles.aiRow}>
-        <AIBtn label="Outfit"   icon="shirt-outline"   tint={colors.primary} />
-        <AIBtn label="Activity" icon="bicycle-outline"  tint={colors.prayer}  />
-        <AIBtn label="Commute"  icon="car-outline"      tint={colors.accent}  />
-      </View>
-    </ScrollView>
+        {/* ── Hero temp ── */}
+        <View style={s.heroRow}>
+          <View>
+            <Text style={s.tempBig}>{temp}°</Text>
+            <Text style={s.desc}>{w.weather[0].description}</Text>
+            <Text style={s.feelsLike}>
+              Feels {feels}° · {windDir(w.wind_deg)} {Math.round(w.wind_speed * 3.6)} km/h
+            </Text>
+          </View>
+          <Text style={s.heroEmoji}>{emoji}</Text>
+        </View>
+
+        {/* ── Stats grid ── */}
+        <View style={s.statsGrid}>
+          {[
+            { val: `${w.humidity}%`,                          lbl: 'Humidity'   },
+            { val: `${w.uvi} · ${uvRisk(w.uvi)}`,            lbl: 'UV index'   },
+            { val: aqiLabel(aqi?.main?.aqi),                  lbl: 'Air quality',
+              col: aqiColor(aqi?.main?.aqi) },
+            { val: w.visibility ? `${(w.visibility/1000).toFixed(0)}km` : '—',
+              lbl: 'Visibility' },
+          ].map((item, i) => (
+            <View key={i} style={s.statCard}>
+              <Text style={[s.statVal, item.col ? { color: item.col } : {}]}>
+                {item.val}
+              </Text>
+              <Text style={s.statLbl}>{item.lbl}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* ── Sunrise / Sunset / Dew point ── */}
+        <View style={s.sunCard}>
+          <View style={s.sunItem}>
+            <Text style={s.sunIcon}>🌅</Text>
+            <Text style={s.sunVal}>{fmtTime(w.sunrise, tz)}</Text>
+            <Text style={s.sunLbl}>Sunrise</Text>
+          </View>
+          <View style={s.sunDivider} />
+          <View style={s.sunItem}>
+            <Text style={s.sunIcon}>🌇</Text>
+            <Text style={s.sunVal}>{fmtTime(w.sunset, tz)}</Text>
+            <Text style={s.sunLbl}>Sunset</Text>
+          </View>
+          <View style={s.sunDivider} />
+          <View style={s.sunItem}>
+            <Text style={s.sunIcon}>💧</Text>
+            <Text style={s.sunVal}>{Math.round(w.dew_point)}°</Text>
+            <Text style={s.sunLbl}>Dew point</Text>
+          </View>
+        </View>
+
+        {/* ── Hourly forecast ── */}
+        <Text style={s.sectionLabel}>Hourly</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {data!.hourly.map((h: any, i: number) => (
+            <View key={i} style={[s.hourCard, i === 0 && s.hourCardActive]}>
+              <Text style={s.hourTime}>{i === 0 ? 'Now' : fmtHour(h.dt, tz)}</Text>
+              <Text style={s.hourEmoji}>{weatherEmoji[h.weather[0].icon] ?? '🌡️'}</Text>
+              <Text style={s.hourTemp}>{Math.round(h.temp)}°</Text>
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* ── 7-day forecast ── */}
+        <Text style={s.sectionLabel}>7-day forecast</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {data!.daily.map((d: any, i: number) => (
+            <View key={i} style={[s.dayCard, i === 0 && s.hourCardActive]}>
+              <Text style={s.dayName}>{i === 0 ? 'Today' : dayAbbr(d.dt, tz)}</Text>
+              <Text style={s.hourEmoji}>{weatherEmoji[d.weather[0].icon] ?? '🌡️'}</Text>
+              <Text style={s.dayHi}>{Math.round(d.temp.max)}°</Text>
+              <Text style={s.dayLo}>{Math.round(d.temp.min)}°</Text>
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* ── Edmonton winter alert ── */}
+        {isWinter && (
+          <View style={s.winterAlert}>
+            <Text style={s.winterTitle}>
+              ⚠️ Edmonton winter advisory
+            </Text>
+            <Text style={s.winterText}>
+              {temp < -20
+                ? `Extreme cold: ${temp}°C. Limit time outside. Cover all exposed skin.`
+                : `Cold alert: ${temp}°C. Dress in layers. Watch for black ice on roads.`}
+            </Text>
+          </View>
+        )}
+
+        {/* ── AI suggestions ── */}
+        <Text style={s.sectionLabel}>AI suggestions</Text>
+
+        {/* AI result card */}
+        {(aiLoading || aiCard) && (
+          <View style={s.aiResultCard}>
+            {aiLoading ? (
+              <View style={s.aiLoadingRow}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={s.aiLoadingText}>Thinking…</Text>
+              </View>
+            ) : aiCard && (
+              <>
+                <Text style={s.aiResultTitle}>
+                  {activeAi === 'outfit'   ? '👔 Outfit of the day'  :
+                   activeAi === 'activity' ? '🏃 Activity window'    :
+                                             '🚗 Commute risk'}
+                </Text>
+                <Text style={s.aiResultText}>{aiCard.text}</Text>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* AI buttons */}
+        <View style={s.aiGrid}>
+          {[
+            { type: 'outfit',   icon: '👔', title: 'Outfit',   sub: 'What to wear today'     },
+            { type: 'activity', icon: '🏃', title: 'Activity', sub: 'Best outdoor window'    },
+            { type: 'commute',  icon: '🚗', title: 'Commute',  sub: 'Driving conditions',
+              full: true },
+          ].map(({ type, icon, title, sub, full }) => (
+            <TouchableOpacity
+              key={type}
+              style={[s.aiBtn, full && s.aiBtnFull,
+                activeAi === type && aiCard ? s.aiBtnActive : {}]}
+              onPress={() => {
+                setActiveAi(type);
+                setAiCard({ type, text: `AI ${title} suggestions coming soon! Connect Claude API to enable.` });
+              }}
+              disabled={aiLoading}
+            >
+              <Text style={s.aiBtnIcon}>{icon}</Text>
+              <Text style={s.aiBtnTitle}>{title}</Text>
+              <Text style={s.aiBtnSub}>{sub}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const TEMP_SIZE = 84;
-
-const styles = StyleSheet.create({
-  screen: {
+// ── Styles ────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  safe: {
     flex: 1,
     backgroundColor: colors.bgDark,
   },
-  content: {
-    paddingHorizontal: spacing['5'],
+  scroll: {
+    flex: 1,
+    paddingHorizontal: spacing[4],
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[3],
+  },
+  loadingText: {
+    fontSize: fontSizes.sm,
+    color: colors.textDarkSecondary,
+    fontFamily: fonts.body,
+  },
+  errorIcon: { fontSize: 32 },
+  errorText: {
+    fontSize: fontSizes.sm,
+    color: colors.textDarkSecondary,
+    textAlign: 'center',
+    fontFamily: fonts.body,
+  },
+  retryBtn: {
+    backgroundColor: `${colors.primary}22`,
+    borderWidth: 0.5,
+    borderColor: `${colors.primary}55`,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing[5],
+    paddingVertical: spacing[2],
+  },
+  retryText: {
+    fontSize: fontSizes.sm,
+    color: colors.primary,
+    fontFamily: fonts.medium,
   },
 
-  // Header
-  header: {
+  // Top bar
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing['8'],
+    paddingTop: spacing[3],
+    paddingBottom: spacing[1],
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['1'],
-  },
-  locationText: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.base,
-    color: colors.textDarkPrimary,
-  },
-  timeText: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.xs,
-    color: colors.textDarkTertiary,
-    letterSpacing: 0.3,
-  },
-
-  // Hero / temperature
-  heroArea: {
-    alignItems: 'center',
-    marginBottom: spacing['3'],
-  },
-  tempRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  tempValue: {
-    fontFamily: fonts.light,
-    fontSize: TEMP_SIZE,
-    lineHeight: TEMP_SIZE * 1.05,
-    color: colors.textDarkPrimary,
-    includeFontPadding: false,
-  },
-  tempUnit: {
-    fontFamily: fonts.light,
-    fontSize: fontSizes['4xl'],
-    color: colors.textDarkSecondary,
-    marginTop: spacing['4'],
-    includeFontPadding: false,
-  },
-  conditionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['2'],
-    marginTop: spacing['2'],
-  },
-  conditionEmoji: {
-    fontSize: fontSizes['2xl'],
-  },
-  conditionText: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.lg,
-    color: colors.textDarkSecondary,
-  },
-
-  // Feels like + wind
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing['3'],
-    marginBottom: spacing['8'],
-  },
-  metaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['1'],
-  },
-  metaText: {
-    fontFamily: fonts.body,
+  city: {
     fontSize: fontSizes.sm,
     color: colors.textDarkSecondary,
+    fontFamily: fonts.body,
   },
-  metaSep: {
-    width: 3,
-    height: 3,
-    borderRadius: radius.full,
-    backgroundColor: colors.borderDark,
+  timeText: {
+    fontSize: fontSizes.xs,
+    color: colors.textDarkTertiary,
+    fontFamily: fonts.body,
   },
 
-  // 4-stat grid
-  statGrid: {
+  // Hero
+  heroRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing['3'],
-    marginBottom: spacing['3'],
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: spacing[4],
+  },
+  tempBig: {
+    fontSize: 84,
+    fontWeight: '300',
+    color: colors.textDarkPrimary,
+    letterSpacing: -4,
+    lineHeight: 88,
+    fontFamily: fonts.light,
+  },
+  desc: {
+    fontSize: fontSizes.lg,
+    color: colors.textDarkSecondary,
+    marginTop: 4,
+    textTransform: 'capitalize',
+    fontFamily: fonts.body,
+  },
+  feelsLike: {
+    fontSize: fontSizes.sm,
+    color: colors.textDarkTertiary,
+    marginTop: 3,
+    fontFamily: fonts.body,
+  },
+  heroEmoji: {
+    fontSize: 68,
+    lineHeight: 76,
+    marginTop: 8,
+  },
+
+  // Stats
+  statsGrid: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginBottom: spacing[3],
   },
   statCard: {
     flex: 1,
-    minWidth: '46%',
     backgroundColor: colors.bgDarkCard,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: colors.borderDark,
-    borderRadius: radius.lg,
-    padding: spacing['4'],
-    gap: spacing['1'],
-    ...shadows.card,
+    borderRadius: radius.md,
+    padding: spacing[2],
+    alignItems: 'center',
   },
-  statEmoji: {
-    fontSize: fontSizes.xl,
-    marginBottom: spacing['1'],
-  },
-  statValue: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.lg,
+  statVal: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
     color: colors.textDarkPrimary,
+    fontFamily: fonts.medium,
+    textAlign: 'center',
   },
-  statLabel: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.xs,
-    color: colors.textDarkSecondary,
+  statLbl: {
+    fontSize: 9,
+    color: colors.textDarkTertiary,
+    marginTop: 2,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
+    fontFamily: fonts.body,
+    textAlign: 'center',
   },
 
   // Sun card
   sunCard: {
-    flexDirection: 'row',
     backgroundColor: colors.bgDarkCard,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: colors.borderDark,
     borderRadius: radius.lg,
-    paddingVertical: spacing['4'],
-    marginBottom: spacing['8'],
-    ...shadows.card,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: spacing[3],
+    marginBottom: spacing[3],
   },
-  sunItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing['1'],
-  },
-  sunEmoji: {
-    fontSize: fontSizes.xl,
-  },
-  sunValue: {
+  sunItem: { alignItems: 'center', gap: 3 },
+  sunIcon: { fontSize: 18 },
+  sunVal: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
     fontFamily: fonts.medium,
-    fontSize: fontSizes.md,
-    color: colors.prayer,
   },
-  sunLabel: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.xs,
+  sunLbl: {
+    fontSize: 10,
     color: colors.textDarkTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
+    fontFamily: fonts.body,
   },
   sunDivider: {
-    width: 1,
-    marginVertical: spacing['2'],
+    width: 0.5,
     backgroundColor: colors.borderDark,
   },
 
-  // Section header
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['2'],
-    marginBottom: spacing['3'],
-  },
-  sectionTitle: {
-    fontFamily: fonts.medium,
+  // Section label
+  sectionLabel: {
     fontSize: fontSizes.xs,
-    color: colors.textDarkSecondary,
+    fontWeight: '500',
+    color: colors.textDarkTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-
-  // Horizontal scroll wrapper — bleeds to screen edge
-  hScroll: {
-    marginHorizontal: -spacing['5'],
-    marginBottom: spacing['8'],
-  },
-  hScrollContent: {
-    paddingHorizontal: spacing['5'],
-    gap: spacing['2'],
-  },
-
-  // Hourly card
-  hCard: {
-    alignItems: 'center',
-    gap: spacing['2'],
-    paddingVertical: spacing['3'],
-    paddingHorizontal: spacing['4'],
-    backgroundColor: colors.bgDarkCard,
-    borderWidth: 1,
-    borderColor: colors.borderDark,
-    borderRadius: radius.lg,
-  },
-  hCardActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  hTime: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.xs,
-    color: colors.textDarkSecondary,
-  },
-  hTimeActive: {
-    color: colors.textDarkPrimary,
-  },
-  hEmoji: {
-    fontSize: fontSizes.lg,
-  },
-  hTemp: {
+    letterSpacing: 0.8,
+    marginBottom: spacing[2],
     fontFamily: fonts.medium,
-    fontSize: fontSizes.md,
-    color: colors.textDarkPrimary,
-  },
-  hTempActive: {
-    color: colors.textDarkPrimary,
   },
 
-  // Day card
-  dayCard: {
-    alignItems: 'center',
-    gap: spacing['2'],
-    paddingVertical: spacing['3'],
-    paddingHorizontal: spacing['4'],
+  // Hourly
+  hourCard: {
     backgroundColor: colors.bgDarkCard,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: colors.borderDark,
-    borderRadius: radius.lg,
-    minWidth: 76,
+    borderRadius: radius.md,
+    padding: spacing[2],
+    alignItems: 'center',
+    minWidth: 58,
+    marginRight: spacing[2],
+    marginBottom: spacing[3],
+    gap: 2,
+  },
+  hourCardActive: {
+    borderColor: `${colors.primary}55`,
+    backgroundColor: `${colors.primary}12`,
+  },
+  hourTime: {
+    fontSize: 10,
+    color: colors.textDarkTertiary,
+    fontFamily: fonts.body,
+    textTransform: 'uppercase',
+  },
+  hourEmoji: { fontSize: 16 },
+  hourTemp: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
+    fontFamily: fonts.medium,
+  },
+
+  // Daily
+  dayCard: {
+    backgroundColor: colors.bgDarkCard,
+    borderWidth: 0.5,
+    borderColor: colors.borderDark,
+    borderRadius: radius.md,
+    padding: spacing[2],
+    alignItems: 'center',
+    minWidth: 66,
+    marginRight: spacing[2],
+    marginBottom: spacing[3],
+    gap: 2,
   },
   dayName: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.xs,
-    color: colors.textDarkSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  dayEmoji: {
-    fontSize: fontSizes.xl,
-  },
-  dayHigh: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.md,
-    color: colors.textDarkPrimary,
-  },
-  dayLow: {
-    fontFamily: fonts.body,
-    fontSize: fontSizes.sm,
+    fontSize: 10,
     color: colors.textDarkTertiary,
+    fontFamily: fonts.body,
+  },
+  dayHi: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
+    fontFamily: fonts.medium,
+  },
+  dayLo: {
+    fontSize: 11,
+    color: colors.textDarkTertiary,
+    fontFamily: fonts.body,
   },
 
   // Winter alert
-  alertCard: {
-    backgroundColor: colors.ramadanGoldBg,
-    borderWidth: 1,
-    borderColor: colors.warning,
+  winterAlert: {
+    backgroundColor: `${colors.accent}10`,
+    borderWidth: 0.5,
+    borderColor: `${colors.accent}40`,
     borderRadius: radius.lg,
-    padding: spacing['4'],
-    gap: spacing['2'],
-    marginBottom: spacing['8'],
+    padding: spacing[4],
+    marginBottom: spacing[3],
   },
-  alertHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['2'],
-  },
-  alertTitle: {
-    fontFamily: fonts.medium,
-    fontSize: fontSizes.md,
-    color: colors.warning,
-  },
-  alertBody: {
-    fontFamily: fonts.body,
+  winterTitle: {
     fontSize: fontSizes.sm,
-    color: colors.textDarkSecondary,
-    lineHeight: fontSizes.sm * 1.65,
+    fontWeight: '500',
+    color: colors.accent,
+    marginBottom: 4,
+    fontFamily: fonts.medium,
+  },
+  winterText: {
+    fontSize: fontSizes.sm,
+    color: `${colors.accent}cc`,
+    lineHeight: 20,
+    fontFamily: fonts.body,
   },
 
-  // AI suggestions
-  aiRow: {
+  // AI
+  aiResultCard: {
+    backgroundColor: colors.bgDarkCard,
+    borderWidth: 0.5,
+    borderColor: `${colors.primary}40`,
+    borderRadius: radius.lg,
+    padding: spacing[4],
+    marginBottom: spacing[3],
+  },
+  aiLoadingRow: {
     flexDirection: 'row',
-    gap: spacing['3'],
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  aiLoadingText: {
+    fontSize: fontSizes.sm,
+    color: colors.textDarkSecondary,
+    fontFamily: fonts.body,
+  },
+  aiResultTitle: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
+    color: colors.textDarkSecondary,
+    marginBottom: spacing[2],
+    fontFamily: fonts.medium,
+  },
+  aiResultText: {
+    fontSize: fontSizes.sm,
+    color: colors.textDarkPrimary,
+    lineHeight: 22,
+    fontFamily: fonts.body,
+  },
+  aiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
   },
   aiBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing['2'],
-    paddingVertical: spacing['5'],
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    width: '48%',
     backgroundColor: colors.bgDarkCard,
+    borderWidth: 0.5,
+    borderColor: colors.borderDark,
+    borderRadius: radius.lg,
+    padding: spacing[4],
   },
-  aiBtnLabel: {
+  aiBtnFull: {
+    width: '100%',
+  },
+  aiBtnActive: {
+    borderColor: `${colors.primary}55`,
+    backgroundColor: `${colors.primary}0d`,
+  },
+  aiBtnIcon: { fontSize: 22, marginBottom: spacing[1] },
+  aiBtnTitle: {
+    fontSize: fontSizes.sm,
+    fontWeight: '500',
+    color: colors.textDarkPrimary,
     fontFamily: fonts.medium,
+  },
+  aiBtnSub: {
     fontSize: fontSizes.xs,
-    letterSpacing: 0.4,
+    color: colors.textDarkTertiary,
+    marginTop: 2,
+    fontFamily: fonts.body,
   },
 });
