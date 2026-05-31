@@ -1,39 +1,38 @@
+import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useFonts } from 'expo-font';
-import {
-  DMSans_300Light,
-  DMSans_400Regular,
-  DMSans_500Medium,
-} from '@expo-google-fonts/dm-sans';
-import {
-  CormorantGaramond_300Light,
-  CormorantGaramond_400Regular,
-} from '@expo-google-fonts/cormorant-garamond';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, ActivityIndicator } from 'react-native';
 import { colors } from '../brand/tokens/brand-tokens';
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
-    'DMSans-Light': DMSans_300Light,
-    'DMSans-Regular': DMSans_400Regular,
-    'DMSans-Medium': DMSans_500Medium,
-    'CormorantGaramond-Light': CormorantGaramond_300Light,
-    'CormorantGaramond-Regular': CormorantGaramond_400Regular,
-  });
+  const [ready, setReady] = useState(false);
 
-  if (!fontsLoaded) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.bgDark, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
+  useEffect(() => {
+    // Small delay to let fonts load
+    const t = setTimeout(() => setReady(true), 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!ready) return (
+    <View style={{ flex: 1, backgroundColor: colors.bgDark,
+      alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator color={colors.primary} />
+    </View>
+  );
 
   return (
-    <>
-      <Stack screenOptions={{ headerShown: false }} />
-      <StatusBar style="light" backgroundColor={colors.bgDark} />
-    </>
+    <SafeAreaProvider>
+      <StatusBar style="light" />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index"       options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding"  options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="auth/sign-in"   options={{ headerShown: false, animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="auth/sign-up"   options={{ headerShown: false, animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="auth/forgot-password" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="(tabs)"      options={{ headerShown: false, animation: 'fade' }} />
+      </Stack>
+    </SafeAreaProvider>
   );
 }

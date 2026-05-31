@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, fontSizes, radius, spacing } from '../../brand/tokens/brand-tokens';
+import { router } from 'expo-router';
 
 // ── Islamic events ────────────────────────────────────────────────
 const EVENTS = [
@@ -129,7 +130,7 @@ export default function MoreScreen() {
 
         {/* ── Quick grid ── */}
         <View style={s.quickGrid}>
-          <TouchableOpacity style={s.quickCard} onPress={() => soon('Account')}>
+          <TouchableOpacity style={s.quickCard} onPress={() => router.push('/account')}>
             <Text style={s.quickIcon}>👤</Text>
             <Text style={s.quickTitle}>My account</Text>
             <Text style={s.quickSub}>Profile & streak</Text>
