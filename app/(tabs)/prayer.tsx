@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, RefreshControl,
@@ -135,6 +135,7 @@ export default function PrayerScreen() {
   const [adhanVisible, setAdhanVisible] = useState(false);
   const [adhanPrayer, setAdhanPrayer]   = useState('');
   const [adhanIsFajr, setAdhanIsFajr]   = useState(false);
+  const listenerRef = useRef<any>(null);
 
   const next = useCountdown(timings);
 
@@ -189,8 +190,10 @@ export default function PrayerScreen() {
     data.data.timings.Fajr
   );
   await scheduleTahajjudAlarm(wakeTime);
-  setupNotificationListener();
-
+if (listenerRef.current) {
+  listenerRef.current.remove();
+}
+listenerRef.current = setupNotificationListener();
 } else {
   throw new Error('Prayer times fetch failed');
 }
