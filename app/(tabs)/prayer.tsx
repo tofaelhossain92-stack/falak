@@ -6,6 +6,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { colors, fonts, fontSizes, radius, spacing } from '../../brand/tokens/brand-tokens';
+import {
+  setupNotifications,
+  schedulePrayerNotifications,
+  scheduleTahajjudAlarm,
+  setupNotificationListener,
+  playAdhan,
+  calcTahajjudWakeTime,
+} from '../../services/adhan-service';
+import AdhanPlayer from '../../components/AdhanPlayer';
 
 // ── Constants ─────────────────────────────────────────────────────
 const ALADHAN_BASE = 'https://api.aladhan.com/v1';
@@ -123,6 +132,9 @@ export default function PrayerScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [checked, setChecked]   = useState<Record<string, boolean>>({});
+  const [adhanVisible, setAdhanVisible] = useState(false);
+  const [adhanPrayer, setAdhanPrayer]   = useState('');
+  const [adhanIsFajr, setAdhanIsFajr]   = useState(false);
 
   const next = useCountdown(timings);
 
@@ -158,22 +170,34 @@ export default function PrayerScreen() {
       );
       const data = await res.json();
 
-      if (data.code === 200) {
-        setTimings(data.data.timings);
-        setHijri(data.data.date.hijri);
-        const now = nowMinutes();
-        const autoDone: Record<string, boolean> = {};
-        for (const p of FARD_PRAYERS) {
-          const t12 = to12hr(data.data.timings[p]);
-          autoDone[p] = toMinutes(t12) < now;
-        }
-        setChecked(autoDone);
-      } else {
-        throw new Error('Prayer times fetch failed');
-      }
-    } catch (e) {
-      setError('Could not load prayer times. Pull down to retry.');
-    } finally {
+     if (data.code === 200) {
+  setTimings(data.data.timings);
+  setHijri(data.data.date.hijri);
+  const now = nowMinutes();
+  const autoDone: Record<string, boolean> = {};
+  for (const p of FARD_PRAYERS) {
+    const t12 = to12hr(data.data.timings[p]);
+    autoDone[p] = toMinutes(t12) < now;
+  }
+  setChecked(autoDone);
+
+  // Setup notifications and schedule adhan
+  await setupNotifications();
+  await schedulePrayerNotifications(data.data.timings);
+  const wakeTime = calcTahajjudWakeTime(
+    data.data.timings.Isha,
+    data.data.timings.Fajr
+  );
+  await scheduleTahajjudAlarm(wakeTime);
+  setupNotificationListener();
+
+} else {
+  throw new Error('Prayer times fetch failed');
+}
+    } catch (e: any) {
+  console.error('Prayer fetch error:', e?.message || e);
+  setError('Could not load prayer times. Pull down to retry.');
+} finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -365,6 +389,14 @@ export default function PrayerScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Adhan player overlay */}
+      <AdhanPlayer
+        prayer={adhanPrayer}
+        isFajr={adhanIsFajr}
+        visible={adhanVisible}
+        onDismiss={() => setAdhanVisible(false)}
+      />
     </SafeAreaView>
   );
 }

@@ -135,17 +135,17 @@ export default function MoreScreen() {
             <Text style={s.quickTitle}>My account</Text>
             <Text style={s.quickSub}>Profile & streak</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[s.quickCard, s.quickCardTeal]} onPress={() => soon('Reminders')}>
+          <TouchableOpacity style={[s.quickCard, s.quickCardTeal]} onPress={() => router.push('/reminders')}>
             <Text style={s.quickIcon}>🔔</Text>
             <Text style={s.quickTitle}>Reminders</Text>
             <Text style={s.quickSub}>All notifications</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[s.quickCard, s.quickCardGold]} onPress={() => soon('Islamic Calendar')}>
+          <TouchableOpacity style={[s.quickCard, s.quickCardGold]} onPress={() => router.push('/islamic-calendar')}>
             <Text style={s.quickIcon}>📅</Text>
             <Text style={s.quickTitle}>Islamic calendar</Text>
             <Text style={s.quickSub}>Events & dates</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.quickCard} onPress={() => soon('Settings')}>
+          <TouchableOpacity style={s.quickCard} onPress={() => router.push('/settings')}>
             <Text style={s.quickIcon}>⚙️</Text>
             <Text style={s.quickTitle}>Settings</Text>
             <Text style={s.quickSub}>App preferences</Text>
